@@ -115,10 +115,10 @@ function showWeatherMessage(message, className) {
   weatherReading.append(status);
 }
 
-async function loadWeather(coords, ) {
+async function loadWeather(coords, city) {
   if (!weatherReading || !weatherTitle) return;
 
-  weatherTitle.textContent = ;
+  weatherTitle.textContent = city;
   const endpoint = new URL("https://api.open-meteo.com/v1/forecast");
   endpoint.search = new URLSearchParams({
     latitude: String(coords.latitude),
