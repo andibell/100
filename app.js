@@ -5,6 +5,7 @@ const prefersReducedMotion = window.matchMedia(
   "(prefers-reduced-motion: reduce)"
 );
 const weatherReading = document.querySelector("#weather-reading");
+const weatherTitle = document.querySelector("#weather-title");
 
 const weatherDescriptions = new Map([
   [0, "Clear"],
@@ -61,16 +62,70 @@ function suggestActivity(code, temperature) {
   return "making something in the studio";
 }
 
-async function loadHoustonWeather() {
+function getBrowserCoordinates() {
+  return new Promise((resolve, reject) => {
+    if (!("geolocation" in navigator)) {
+      reject(new Error("This browser does not support location access."));
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => resolve(coords),
+      reject,
+      { enableHighAccuracy: false, maximumAge: 600000, timeout: 8000 }
+    );
+  });
+}
+
+async function getCityName(coords) {
+  const endpoint = new URL("https://api.bigdatacloud.net/data/reverse-geocode-client");
+  endpoint.search = new URLSearchParams({
+    latitude: String(coords.latitude),
+    longitude: String(coords.longitude),
+    localityLanguage: "en",
+  });
+
+  try {
+    const response = await fetch(endpoint);
+    if (!response.ok) {
+      throw new Error(`Reverse geocoding returned HTTP ${response.status}`);
+    }
+
+    const data = await response.json();
+    const city = data.city || data.locality;
+    if (typeof city === "string" && city.trim()) {
+      return city.trim();
+    }
+
+    throw new Error("Reverse geocoding did not return a city name");
+  } catch (error) {
+    console.error("Unable to find the city for the browser location.", error);
+    return "Your location";
+  }
+}
+
+function showWeatherMessage(message, className) {
   if (!weatherReading) return;
 
+  weatherReading.replaceChildren();
+  const status = document.createElement("p");
+  status.className = className;
+  status.setAttribute("role", "status");
+  status.textContent = message;
+  weatherReading.append(status);
+}
+
+async function loadWeather(coords, city) {
+  if (!weatherReading || !weatherTitle) return;
+
+  weatherTitle.textContent = city;
   const endpoint = new URL("https://api.open-meteo.com/v1/forecast");
   endpoint.search = new URLSearchParams({
-    latitude: "29.7604",
-    longitude: "-95.3698",
+    latitude: String(coords.latitude),
+    longitude: String(coords.longitude),
     current: "temperature_2m,weather_code",
     temperature_unit: "fahrenheit",
-    timezone: "America/Chicago",
+    timezone: "auto",
   });
 
   try {
@@ -102,14 +157,35 @@ async function loadHoustonWeather() {
 
     weatherReading.append(summary, context);
   } catch (error) {
-    console.error("Unable to load Houston weather.", error);
-    weatherReading.replaceChildren();
+    console.error(`Unable to load weather for ${city}.`, error);
+    showWeatherMessage(
+      "Current conditions are unavailable right now.",
+      "weather-error"
+    );
+  }
+}
 
-    const message = document.createElement("p");
-    message.className = "weather-error";
-    message.setAttribute("role", "status");
-    message.textContent = "Current conditions are unavailable right now.";
-    weatherReading.append(message);
+async function initializeWeather() {
+  if (!weatherReading || !weatherTitle) return;
+
+  try {
+    const coords = await getBrowserCoordinates();
+    const city = await getCityName(coords);
+    await loadWeather(coords, city);
+  } catch (error) {
+    if (error.code === 1) {
+      showWeatherMessage(
+        "Enable location to see your weather.",
+        "weather-permission"
+      );
+      return;
+    }
+
+    console.error("Unable to get the browser location.", error);
+    showWeatherMessage(
+      "Location is unavailable right now.",
+      "weather-error"
+    );
   }
 }
 
@@ -132,4 +208,4 @@ if ("IntersectionObserver" in window && !prefersReducedMotion.matches) {
   });
 }
 
-loadHoustonWeather();
+initializeWeather();
